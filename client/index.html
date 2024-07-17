@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>連線應用範例</title>
+    <link rel="stylesheet" href="./css/index.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+
+<body>
+    <div class="container-lg h-100 bg-primary-subtle p-2 main d-flex flex-column">
+        <div class="up d-flex">
+            <div class="left bg-warning-subtle me-1 p-1"></div>
+            <div class="right bg-secondary-subtle h-100 rounded-1 p-1">
+            </div>
+        </div>
+        <div class="input-group input-group-lg my-2 down">
+            <input type="text" class="form-control" name="msg">
+            <div class="btn btn-primary input-group-text btn-send">送出訊息</div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const ws = new WebSocket("ws://localhost:8080");
+        const userID = new Date().getTime().toString();
+        const rightArea = document.querySelector(".right");
+        const btnSend = document.querySelector(".btn-send");
+        const inputMsg = document.querySelector("input[name=msg]")
+        const leftArea = document.querySelector(".left");
+        let clientList, targetUserID, clientMsg;
+
+        ws.addEventListener("open", e => {
+            let toServerMsg = {
+                type: "register",
+                userID,
+            }
+            ws.send(JSON.stringify(toServerMsg));
+        });
+
+        ws.addEventListener("message", e => {
+            let fromServerMsg = JSON.parse(e.data);
+
+            if (fromServerMsg.type === "registered") {
+                clientList = fromServerMsg.allClients;
+                let who = userID === fromServerMsg.userID ? "我" : `${fromServerMsg.userID}`;
+                leftArea.innerHTML += `<div class="text-center"><span class="text-danger fw-bold mb-1">${who} <span>已進入聊天室</div>`;
+                scrolltoBottom();
+                setClientList();
+            }
+
+            if (fromServerMsg.type === "disconnected") {
+                clientList = fromServerMsg.allClients;
+                let { dsID } = fromServerMsg;
+                leftArea.innerHTML += `<div class="text-center"><span class="text-danger fw-bold mb-1">${dsID} <span>已離開聊天室</div>`;
+                scrolltoBottom();
+                setClientList();
+            }
+
+            if (fromServerMsg.type === "message") {
+                // let chatRoomMsg = "<div>";
+                // let { fromID, allClients, clientMsg } = fromServerMsg;
+                // let speakUser = `<span class="text-danger fw-bold">${fromID}</span>`;
+                // let textMiddle = `說: `;
+
+                // if (fromID === userID) {
+                //     speakUser = `<span class="text-danger fw-bold">我</span>`;
+                // }
+                // if (fromServerMsg.targetUserID) {
+                //     if (fromID === userID) {
+                //         textMiddle = `悄悄對 ${fromServerMsg.targetUserID} 說:`;
+                //     } else {
+                //         textMiddle = `悄悄對你說:`
+                //     }
+                // }
+                // chatRoomMsg += `${speakUser} ${textMiddle} ${clientMsg}`;
+                // chatRoomMsg += "</div>";
+                // leftArea.innerHTML += chatRoomMsg;
+
+                let { fromID, clientMsg } = fromServerMsg;
+                let chatRoomMsg = document.createElement("div");
+                let speakUserSpan = document.createElement("span");
+                speakUserSpan.classList.add("mb-1", "text-danger", "fw-bold");
+                let speakUser = document.createTextNode(fromID === userID ? `我 ` : `${fromID} `);
+                let textMiddle;
+                speakUserSpan.appendChild(speakUser);
+                chatRoomMsg.appendChild(speakUserSpan);
+                if (fromServerMsg.targetUserID) {
+                    textMiddle = document.createTextNode(fromID === userID ? `對 ${fromServerMsg.targetUserID} 悄悄說: ` : `對 你 悄悄說: `)
+                } else {
+                    textMiddle = document.createTextNode(` 說: `);
+                }
+                chatRoomMsg.appendChild(textMiddle);
+                chatRoomMsg.append(`${clientMsg}`);
+                leftArea.appendChild(chatRoomMsg);
+                scrolltoBottom();
+            }
+        });
+        // 點擊送出按鈕後，觸發用戶發送訊息function
+        btnSend.addEventListener("click", e => {
+            clientMsg = inputMsg.value;
+            if (clientMsg.trim() !== "") {
+                sendMsg();
+            }
+        })
+
+        // 在訊息輸入框內按Enter後，觸發用戶發送訊息function
+        inputMsg.addEventListener("keyup", e => {
+            if (e.key === "Enter") {
+                clientMsg = inputMsg.value;
+                if (clientMsg.trim() !== "") {
+                    sendMsg();
+                }
+            }
+        })
+        // 使用者傳送訊息
+        function sendMsg() {
+            let toServerMsg = {
+                type: "message",
+                userID,
+                clientMsg,
+            }
+            if (targetUserID) {
+                toServerMsg.targetUserID = targetUserID;
+            }
+            ws.send(JSON.stringify(toServerMsg));
+            inputMsg.value = "";
+        }
+
+        // 使用者傳送訊息
+        function setClientList() {
+            let clientDOM = "<div>";
+            let mySelf;
+            clientList.forEach(client => {
+                mySelf = (client === userID) ? "btn-danger" : "btn-secondary";
+                clientDOM += `<button class="btn mb-1 ${mySelf}" idn="${client}">${client}</button>`;
+            })
+            clientDOM += `</div>`
+            rightArea.innerHTML = clientDOM;
+
+            const btns = rightArea.querySelectorAll(".btn");
+            btns.forEach(btn => {
+                btn.addEventListener("click", e => {
+                    let idn = e.target.getAttribute("idn");
+                    if (idn === userID) {
+                        return false;
+                    }
+                    if (e.target.classList.contains("btn-success")) {
+                        e.target.classList.remove("btn-success");
+                        targetUserID = undefined;
+                    } else {
+                        e.target.classList.add("btn-success");
+                        targetUserID = idn;
+                    }
+                })
+            })
+        }
+
+        // 讓可視區域保持在可以看到最新訊息的範圍內
+        function scrolltoBottom() {
+            leftArea.scrollTop = leftArea.scrollHeight - leftArea.clientHeight;
+        }
+    </script>
+</body>
